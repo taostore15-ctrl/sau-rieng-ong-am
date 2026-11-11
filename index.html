@@ -169,6 +169,10 @@ label{font-size:13.5px;font-weight:800;display:block;margin:12px 0 8px}
 .emptyNote{font-size:14px;color:var(--muted);font-weight:600;margin:4px 0 8px;line-height:1.5}
 /* === V3: Scratchpad FAB + sheet === */
 .fab{position:fixed;right:16px;bottom:calc(94px + env(safe-area-inset-bottom));width:62px;height:62px;border-radius:50%;background:var(--green);color:#fff;font-size:28px;border:0;box-shadow:0 4px 14px rgba(0,0,0,.28);cursor:pointer;z-index:30;display:grid;place-items:center;font-family:inherit}
+.undoBar{position:fixed;right:16px;bottom:calc(168px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:8px;z-index:31;align-items:flex-end}
+.undoPill{min-height:44px;border-radius:999px;border:1.5px solid var(--line);background:var(--card);color:var(--text);font-family:inherit;font-size:14px;font-weight:800;padding:10px 16px;box-shadow:0 4px 14px rgba(0,0,0,.18);cursor:pointer;display:none}
+.undoPill.show{display:block}
+.undoPill:active{background:var(--greenBg)}
 .sheetOverlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:40;display:none}
 .sheetOverlay.open{display:block}
 .sheet{position:absolute;left:0;right:0;bottom:0;background:var(--card);border-radius:16px 16px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom));max-height:84vh;overflow-y:auto;max-width:860px;margin:0 auto}
@@ -520,6 +524,8 @@ label{font-size:13.5px;font-weight:800;display:block;margin:12px 0 8px}
 </div>
 
 <button class="fab" id="fabBtn" onclick="openScratch()" aria-label="Ghi nhanh việc vặt">📝</button>
+
+<div class="undoBar" id="undoBar"><button class="undoPill" id="undoBtn" type="button" onclick="globalUndo()" aria-label="Hoàn tác">↩ Hoàn tác</button><button class="undoPill" id="redoBtn" type="button" onclick="globalRedo()" aria-label="Làm lại">↪ Làm lại</button></div>
 
 <div class="sheetOverlay" id="scratchSheet">
   <div class="sheet">
@@ -1200,7 +1206,52 @@ function loadState(){
 var state=loadState();
 var REDUCED_MOTION=false; try{ REDUCED_MOTION=window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){}
 function scrollBehavior(){ return REDUCED_MOTION?'auto':'smooth'; }
-function saveState(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} try{ cloudSchedulePush(); }catch(e){} }
+var UNDO_KEY='brownDurianUndoV1';
+var undoApplying=false;
+function undoLoad(){ try{ var raw=localStorage.getItem(UNDO_KEY); if(raw){ var s=JSON.parse(raw); if(s&&typeof s==='object'){ if(!Array.isArray(s.undo)) s.undo=[]; if(!Array.isArray(s.redo)) s.redo=[]; return s; } } }catch(e){} return {undo:[],redo:[]}; }
+function undoSave(stack){ try{ localStorage.setItem(UNDO_KEY, JSON.stringify(stack)); }catch(e){} }
+function undoUpdateUI(){ try{ var st=undoLoad(); var ub=document.getElementById('undoBtn'); if(ub) ub.classList.toggle('show', st.undo.length>0); var rb=document.getElementById('redoBtn'); if(rb) rb.classList.toggle('show', st.redo.length>0); }catch(e){} }
+function undoCaptureSnapshot(prevStr,newStr){
+  if(!prevStr||!newStr||prevStr===newStr) return;
+  if(undoApplying) return;
+  try{ if(typeof syncApplying!=='undefined'&&syncApplying) return; }catch(e){}
+  var stack=undoLoad();
+  var top=stack.undo.length?stack.undo[stack.undo.length-1].state:null;
+  if(top===prevStr) return;
+  stack.undo.push({at:Date.now(),state:prevStr});
+  while(stack.undo.length>30) stack.undo.shift();
+  stack.redo=[];
+  undoSave(stack);
+}
+function globalUndo(){
+  if(undoApplying) return;
+  var stack=undoLoad(); if(!stack.undo.length) return;
+  var curStr=null; try{ curStr=localStorage.getItem(LS_KEY); }catch(e){}
+  if(!curStr){ try{ curStr=JSON.stringify(state); }catch(e){ return; } }
+  var entry=stack.undo.pop();
+  stack.redo.push({at:Date.now(),state:curStr});
+  while(stack.redo.length>30) stack.redo.shift();
+  undoSave(stack);
+  undoApplying=true;
+  try{ state=JSON.parse(entry.state); try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} renderAllViews(); try{ cloudSchedulePush(); }catch(e){} }catch(e){}
+  undoApplying=false;
+  undoUpdateUI();
+}
+function globalRedo(){
+  if(undoApplying) return;
+  var stack=undoLoad(); if(!stack.redo.length) return;
+  var curStr=null; try{ curStr=localStorage.getItem(LS_KEY); }catch(e){}
+  if(!curStr){ try{ curStr=JSON.stringify(state); }catch(e){ return; } }
+  var entry=stack.redo.pop();
+  stack.undo.push({at:Date.now(),state:curStr});
+  while(stack.undo.length>30) stack.undo.shift();
+  undoSave(stack);
+  undoApplying=true;
+  try{ state=JSON.parse(entry.state); try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} renderAllViews(); try{ cloudSchedulePush(); }catch(e){} }catch(e){}
+  undoApplying=false;
+  undoUpdateUI();
+}
+function saveState(){ var prevStr=null,newStr=null; try{ prevStr=localStorage.getItem(LS_KEY); }catch(e){} try{ newStr=JSON.stringify(state); }catch(e){} try{ undoCaptureSnapshot(prevStr,newStr); }catch(e){} try{ localStorage.setItem(LS_KEY, newStr); }catch(e){} try{ cloudSchedulePush(); }catch(e){} try{ undoUpdateUI(); }catch(e){} }
 function fmt(n){return n.toLocaleString('vi-VN')+" đ"}
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function isoToday(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
@@ -2521,6 +2572,7 @@ function renderAllViews(){
   renderPrune(); renderPrune2(); renderMilestones(); renderUrgent(); renderAllTasks(); renderCosts(); renderWeak(); renderParams(); renderJournalToday(); renderMonthSummary(); renderScratch(); renderSpray(); renderCalendar(); renderDict(); initTermSlots(); renderCostSuggestions();
 }
 renderAllViews();
+try{ undoUpdateUI(); }catch(e){}
 </script>
 <script>
 /* ============ ĐỒNG BỘ ĐÁM MÂY (Firebase Firestore) ============ */
