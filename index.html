@@ -535,6 +535,15 @@ label{font-size:13.5px;font-weight:800;display:block;margin:12px 0 8px}
       <button class="btn btn-outline" type="button" onclick="changeGardenCode()">Đổi mã</button>
     </div>
   </details>
+  <div class="blockTitle"><h2>🛡️ Sao lưu &amp; khôi phục</h2></div>
+  <p class="sub" id="bakStatusLine" style="margin:0 0 8px">Bản sao gần nhất: …</p>
+  <div id="bakList"></div>
+  <div class="btnRow" style="margin:0 0 4px">
+    <button class="btn btn-green" type="button" onclick="backupNow(this)">💾 Sao lưu ngay</button>
+    <button class="btn btn-outline" type="button" onclick="backupRefreshList(true)">↻ Tải lại danh sách</button>
+  </div>
+  <p class="sub" id="bakMsg" style="margin:0 0 10px"></p>
+  <p class="sub" style="margin:0 0 10px">Tự chụp mỗi ngày khi app mở có mạng. Khôi phục sẽ áp cho cả 2 máy.</p>
   <div class="paramGrid" id="paramGrid"></div>
   <div class="blockTitle"><h2>📖 Từ điển vườn</h2></div>
   <p class="sub" style="margin:0 0 8px">103 mục chia 11 nhóm — bấm vào từng mục để mở. Mỗi mục có nghĩa tiếng thường, cách áp ở vườn mình và một lưu ý riêng.</p>
@@ -2631,6 +2640,7 @@ function cloudPushNow(){
   syncFns.setDoc(syncFns.docRef, payload).then(function(){
     syncDocSyncKey=payload.syncKey; syncSetSyncedAt(payload.updatedAt);
     syncSetStatus(navigator.onLine===false ? 'Mất mạng — đang lưu trên máy' : 'Đã nối · vừa xong');
+    try{ backupAutoCheck(); }catch(e){}
   }).catch(function(){ syncSetStatus('Mất mạng — đang lưu trên máy'); });
 }
 function cloudApplyRemote(data){
@@ -2655,6 +2665,7 @@ function cloudInit(){
         var d=snap.data();
         if(d.syncKey) syncDocSyncKey=d.syncKey;
         if(d.state&&(Number(d.updatedAt)||0)>syncLocalSyncedAt()){ cloudApplyRemote(d); }
+        try{ backupAutoCheck(); }catch(e){}
       } else {
         cloudPushNow();
       }
@@ -2673,6 +2684,165 @@ function cloudInit(){
 window.addEventListener('online', function(){ if(syncFirestore){ syncSetStatus('Đang lưu…'); cloudPushNow(); } });
 window.addEventListener('offline', function(){ syncSetStatus('Mất mạng — đang lưu trên máy'); });
 syncSetStatus('Đang nối…');
+</script>
+<script>
+/* ============ SAO LƯU TỰ ĐỘNG & KHÔI PHỤC (ô xoay vòng trong collection gardens) ============ */
+var BAK_KIND={ 'auto-daily':'Sao lưu tự động', 'auto-weekly':'Sao lưu tuần', 'manual':'Sao lưu tay', 'pre-restore':'Trước khôi phục' };
+var BAK_DOW_FULL=['Chủ Nhật','Thứ Hai','Thứ Ba','Thứ Tư','Thứ Năm','Thứ Sáu','Thứ Bảy'];
+function bakDayNumber(now){ return Math.floor(((now==null?Date.now():now)+7*3600e3)/86400e3); }
+function bakWeekNumber(now){ return Math.floor(bakDayNumber(now)/7); }
+function bakDailySlot(now){ return bakDayNumber(now)%7; }
+function bakWeeklySlot(now){ return bakWeekNumber(now)%4; }
+function bakSlotCode(slot){
+  var base=syncGardenCode;
+  if(slot==='manual') return base+'-bak-manual';
+  if(slot==='prerestore') return base+'-bak-prerestore';
+  if(slot.charAt(0)==='d') return base+'-bak-d'+slot.slice(1);
+  return base+'-bak-w'+slot.slice(1);
+}
+function bakSlotKeyOf(kind,slotIdx){
+  if(kind==='auto-daily') return 'd'+slotIdx;
+  if(kind==='auto-weekly') return 'w'+slotIdx;
+  if(kind==='manual') return 'manual';
+  return 'prerestore';
+}
+function bakAllSlots(){
+  var a=[]; var i;
+  for(i=0;i<7;i++) a.push({slot:'d'+i,kind:'auto-daily'});
+  for(i=0;i<4;i++) a.push({slot:'w'+i,kind:'auto-weekly'});
+  a.push({slot:'manual',kind:'manual'});
+  a.push({slot:'prerestore',kind:'pre-restore'});
+  return a;
+}
+function bakDocRef(code){ return syncFns.doc(syncFirestore,'gardens',code); }
+function bakPayload(kind,stateObj,stateUpdatedAt){
+  return { state: JSON.parse(JSON.stringify(stateObj)), stateUpdatedAt: stateUpdatedAt||0, backedUpAt: Date.now(), updatedBy: syncDeviceId, syncKey: syncDocSyncKey||SYNC_KEY_VALUE, kind: kind };
+}
+function bakWriteSlot(slotKey,kind,stateObj,stateUpdatedAt){
+  if(!syncFirestore||!syncFns) return Promise.reject(new Error('offline'));
+  return syncFns.setDoc(bakDocRef(bakSlotCode(slotKey)), bakPayload(kind,stateObj,stateUpdatedAt));
+}
+function bakReadSlot(slotKey){
+  if(!syncFirestore||!syncFns) return Promise.reject(new Error('offline'));
+  return syncFns.getDoc(bakDocRef(bakSlotCode(slotKey))).then(function(snap){
+    if(!snap.exists()) return null;
+    var d=snap.data();
+    if(!d||typeof d.state!=='object'||!d.state) return null;
+    return d;
+  });
+}
+function bakNeedsCapture(d,kind,now){
+  if(!d||!d.backedUpAt) return true;
+  if(kind==='auto-daily') return bakDayNumber(d.backedUpAt)!==bakDayNumber(now);
+  if(kind==='auto-weekly') return bakWeekNumber(d.backedUpAt)!==bakWeekNumber(now);
+  return false;
+}
+function bakSetStatus(txt){ var el=document.getElementById('bakMsg'); if(el) el.textContent=txt; }
+var bakAutoBusy=false;
+function backupAutoCheck(){
+  if(bakAutoBusy||!syncFirestore||!syncFns||syncApplying) return;
+  bakAutoBusy=true;
+  var now=Date.now();
+  var stateSnap=syncSerialize();
+  var stateUpdAt=syncLocalSyncedAt();
+  var jobs=[];
+  var dKey=bakSlotKeyOf('auto-daily',bakDailySlot(now));
+  var wKey=bakSlotKeyOf('auto-weekly',bakWeeklySlot(now));
+  function maybe(kind,key){
+    return bakReadSlot(key).then(function(d){
+      if(bakNeedsCapture(d,kind,now)){
+        return bakWriteSlot(key,kind,stateSnap,stateUpdAt).then(function(){
+          try{ backupRenderList(); }catch(e){}
+        });
+      }
+    }).catch(function(){ bakSetStatus('Sao lưu lỗi — sẽ thử lại lần mở sau.'); });
+  }
+  jobs.push(maybe('auto-daily',dKey));
+  jobs.push(maybe('auto-weekly',wKey));
+  Promise.all(jobs).then(function(){ bakAutoBusy=false; }).catch(function(){ bakAutoBusy=false; });
+}
+function bakFmtWhen(ms){
+  if(!ms) return '';
+  var d=new Date(ms+7*3600e3);
+  var dow=BAK_DOW_FULL[d.getUTCDay()];
+  function p2(n){ return String(n).padStart(2,'0'); }
+  return dow+' · '+p2(d.getUTCDate())+'/'+p2(d.getUTCMonth()+1)+'/'+d.getUTCFullYear()+' '+p2(d.getUTCHours())+':'+p2(d.getUTCMinutes());
+}
+var bakListCache=[];
+var bakArmedSlot=null, bakArmTimer=null;
+function backupRefreshList(manual){
+  if(!syncFirestore||!syncFns){ if(manual) bakSetStatus('Chưa nối được kho — kiểm tra mạng rồi bấm lại.'); return; }
+  var slots=bakAllSlots();
+  var reads=slots.map(function(s){
+    return bakReadSlot(s.slot).then(function(d){ return d?{slot:s.slot,kind:d.kind||s.kind,backedUpAt:Number(d.backedUpAt)||0}:null; }).catch(function(){ return null; });
+  });
+  Promise.all(reads).then(function(rows){
+    bakListCache=rows.filter(function(r){ return !!r; }).sort(function(a,b){ return b.backedUpAt-a.backedUpAt; });
+    backupRenderList();
+  }).catch(function(){ if(manual) bakSetStatus('Tải danh sách sao lưu lỗi — thử lại sau.'); });
+}
+function backupRenderList(){
+  var stEl=document.getElementById('bakStatusLine');
+  var listEl=document.getElementById('bakList');
+  if(stEl){
+    stEl.textContent=bakListCache.length?('Bản sao gần nhất: '+bakFmtWhen(bakListCache[0].backedUpAt)):'Bản sao gần nhất: chưa có (app sẽ tự chụp khi có mạng)';
+  }
+  if(!listEl) return;
+  if(!bakListCache.length){ listEl.innerHTML='<p class="sub" style="margin:0 0 8px">Chưa có bản sao nào.</p>'; return; }
+  var h='';
+  bakListCache.forEach(function(r){
+    var armed=(bakArmedSlot===r.slot);
+    h+='<div class="calLine" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><span>'+esc((BAK_KIND[r.kind]||'Sao lưu')+' — '+bakFmtWhen(r.backedUpAt))+'</span>'
+      +'<button class="btn '+(armed?'btn-green':'btn-outline')+' btn-small" type="button" onclick="backupRestoreTap(this,\''+r.slot+'\')">'+(armed?'Bấm lần nữa để khôi phục':'Khôi phục')+'</button></div>';
+  });
+  listEl.innerHTML=h;
+}
+function backupNow(btn){
+  if(!syncFirestore||!syncFns){ bakSetStatus('Chưa nối được kho — kiểm tra mạng rồi bấm lại.'); return; }
+  if(btn){ btn.disabled=true; }
+  bakWriteSlot('manual','manual',syncSerialize(),syncLocalSyncedAt()).then(function(){
+    bakSetStatus('Đã sao lưu tay · '+bakFmtWhen(Date.now()));
+    backupRefreshList(false);
+  }).catch(function(){ bakSetStatus('Sao lưu lỗi — thử lại sau.'); }).then(function(){ if(btn){ btn.disabled=false; } });
+}
+function backupRestoreTap(btn,slotKey){
+  if(bakArmedSlot!==slotKey){
+    bakArmedSlot=slotKey;
+    backupRenderList();
+    bakSetStatus('Bấm lần nữa để khôi phục — sổ hiện tại sẽ được chụp lại vào ô Trước khôi phục trước.');
+    if(bakArmTimer) clearTimeout(bakArmTimer);
+    bakArmTimer=setTimeout(function(){ bakArmedSlot=null; backupRenderList(); }, 6000);
+    return;
+  }
+  bakArmedSlot=null;
+  if(bakArmTimer) clearTimeout(bakArmTimer);
+  backupDoRestore(slotKey);
+}
+function backupDoRestore(slotKey){
+  if(!syncFirestore||!syncFns){ bakSetStatus('Chưa nối được kho — kiểm tra mạng rồi bấm lại.'); return; }
+  bakSetStatus('Đang khôi phục…');
+  bakReadSlot(slotKey).then(function(d){
+    if(!d||typeof d.state!=='object'||!d.state){ bakSetStatus('Bản sao này trống hoặc hỏng — không khôi phục được.'); return; }
+    var when=bakFmtWhen(Number(d.backedUpAt)||0);
+    bakWriteSlot('prerestore','pre-restore',syncSerialize(),syncLocalSyncedAt()).catch(function(){}).then(function(){
+      var newState;
+      try{ newState=JSON.parse(JSON.stringify(d.state)); }catch(e){ bakSetStatus('Bản sao hỏng — không khôi phục được.'); return; }
+      state=newState;
+      /* Áp tính như 1 lần sửa của người dùng: saveState() chụp snapshot hoàn tác + ghi localStorage + render + đẩy mây cho máy kia. */
+      saveState(); renderAllViews();
+      bakSetStatus('Đã khôi phục bản '+when+'.');
+      backupRefreshList(false);
+    });
+  }).catch(function(){ bakSetStatus('Khôi phục lỗi — kiểm tra mạng rồi thử lại.'); });
+}
+/* Mở tab Vườn & Thông số là tải danh sách sao lưu */
+(function(){
+  var origSwitchTab=switchTab;
+  switchTab=function(name){
+    origSwitchTab(name);
+    if(name==='settings'){ try{ backupRefreshList(false); }catch(e){} }
+  };
+})();
 </script>
 <script type="module">
 try{
