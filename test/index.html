@@ -427,11 +427,10 @@ label{font-size:13.5px;font-weight:800;display:block;margin:12px 0 8px}
 <!-- LICH -->
 <!-- THOI TIET (BẢN TEST — tab riêng) -->
 <section id="tab-weather" class="section">
-  <div class="blockTitle"><h2>🌦 Thời tiết — Hòa Bắc</h2></div>
-  <article class="card">
-    <div id="wxNow" style="font-size:15px;line-height:1.55">Đang tải dự báo…</div>
-    <p class="msg" id="wxNote" style="margin:8px 0 0"></p>
-  </article>
+  <div id="wxDateLine" style="font-size:17px;font-weight:900;margin:4px 0 10px">…</div>
+
+  <div class="blockTitle"><h2 id="wxTomTitle">📋 Ngày mai làm gì</h2></div>
+  <div id="wxTomorrow"><p class="emptyNote">Đang tính…</p></div>
 
   <div class="blockTitle"><h2>⚠️ Cảnh báo việc vườn</h2></div>
   <div id="wxAlerts"><p class="emptyNote">Đang tính cảnh báo…</p></div>
@@ -441,6 +440,10 @@ label{font-size:13.5px;font-weight:800;display:block;margin:12px 0 8px}
 
   <div class="blockTitle"><h2>📅 7 ngày tới</h2></div>
   <article class="card"><div id="wx7">Đang tải…</div></article>
+
+  <article class="card">
+    <div id="wxNow" style="font-size:13.5px;line-height:1.55">Đang tải dự báo…</div>
+  </article>
 </section>
 
 <section id="tab-schedule" class="section">
@@ -2694,11 +2697,30 @@ if(typeof SYNC_ENABLED!=='undefined'&&!SYNC_ENABLED){
 .wxOk{background:var(--greenBg);color:var(--greenInk);border-radius:var(--r-btn);padding:10px 12px;font-weight:700;font-size:14.5px;line-height:1.45;margin:0 0 8px}
 .wx7row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 2px;border-bottom:1px solid var(--line);font-size:14px;flex-wrap:wrap}
 .wx7row:last-child{border-bottom:none}
+.wx7row span{font-variant-numeric:tabular-nums}
+.wxInfo{background:var(--card2);color:var(--muted);border:1.5px solid var(--line);border-radius:var(--r-btn);padding:10px 12px;font-weight:700;font-size:14px;line-height:1.45;margin:0 0 8px}
+.wxChart{display:flex;gap:4px}
+.wxCol{flex:1;display:flex;flex-direction:column;align-items:center;min-width:0}
+.wxTopLab{font-size:11px;font-weight:800;color:#3f7fbf;min-height:14px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.wxColIcon{font-size:15px;line-height:1.25}
+.wxBarWrap{height:52px;display:flex;align-items:flex-end;margin:2px 0 4px}
+.wxBar{width:16px;border-radius:4px 4px 0 0;background:#5b93d6}
+.wxHourLab{font-size:12px;font-weight:800;font-variant-numeric:tabular-nums}
+.wxProbLab{font-size:11px;color:var(--muted);font-weight:700;font-variant-numeric:tabular-nums}
+.wxChip{display:inline-block;background:var(--greenBg);color:var(--greenInk);border-radius:var(--r-chip);font-size:11px;font-weight:800;padding:1px 7px;margin-left:4px;vertical-align:middle;white-space:nowrap}
+.wxTempWrap{display:flex;align-items:center;gap:5px}
+.wxTempLab{font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums}
+.wxTempTrack{position:relative;width:52px;height:7px;border-radius:99px;background:var(--line);display:inline-block;flex:none}
+.wxTempSeg{position:absolute;top:0;height:7px;border-radius:99px;background:var(--amber)}
+.wxRainWrap{display:flex;align-items:center;gap:6px}
+.wxRainTrack{width:40px;height:7px;border-radius:99px;background:var(--line);display:inline-block;overflow:hidden;flex:none}
+.wxRainBar{display:block;height:7px;background:#5b93d6;border-radius:99px}
+.wxRefresh{border:1.5px solid var(--line);background:var(--card);color:var(--text);border-radius:99px;width:30px;height:30px;font-size:15px;font-weight:900;cursor:pointer;vertical-align:middle;line-height:1;padding:0}
 </style>
 <script>
 /* ============ THỜI TIẾT (Open-Meteo) — BẢN TEST, tab riêng ============ */
 var WX_LAT=11.58153, WX_LON=108.07641;
-var WX_URL='https://api.open-meteo.com/v1/forecast?latitude=11.58153&longitude=108.07641&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,precipitation&hourly=temperature_2m,precipitation,precipitation_probability,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max&timezone=Asia%2FHo_Chi_Minh&past_days=1&forecast_days=7';
+var WX_URL='https://api.open-meteo.com/v1/forecast?latitude=11.58153&longitude=108.07641&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,precipitation&hourly=temperature_2m,precipitation,precipitation_probability,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max&timezone=Asia%2FHo_Chi_Minh&past_days=3&forecast_days=7';
 var WX_CACHE_KEY='brownDurianWxCache';
 var WX_CACHE_MAX_MS=3*60*60*1000;
 /* --- Ngưỡng cảnh báo (chỉnh 1 chỗ) --- */
@@ -2713,9 +2735,31 @@ var WX_DRY_MM=1;               /* mm/ngày trở xuống = khô */
 var WX_WET_MM=5;               /* mm/ngày trở lên = ngày mưa (đếm mưa dầm) */
 var WX_STREAK_DAYS=3;          /* số ngày liên tiếp để nổ luật dầm/khô */
 var WX_DRY_HOT_C=30;           /* °C tối đa ngày để tính nắng khô */
-var WX_D0=1;                   /* chỉ số "hôm nay" trong mảng daily/hourly (past_days=1 nên 0 = hôm qua) */
+var WX_WIND_MAX_KMH=20;        /* gió theo giờ (km/h) >= -> hoãn xịt (luật 6) */
+var WX_WIND_HOURS=12;          /* cửa sổ giờ xét gió cho luật 6 */
+var WX_SOIL_DRY=5;             /* tổng mưa 3 ngày qua (mm): <5 = đất khô */
+var WX_SOIL_MID=20;            /* 5–20 = đất vừa ẩm */
+var WX_SOIL_WET=40;            /* 20–40 = đất ướt · >40 = đất rất ướt */
+var WX_DRY_WIN_MM=0.2;         /* giờ tính là "khô" cho cửa sổ khô: mưa < 0,2mm */
+var WX_DRY_WIN_PROB=30;        /* ... và khả năng mưa < 30% */
+var WX_DRY_WINDOW_MIN_H=4;     /* cửa sổ khô tối thiểu (giờ) mới hiện */
+var WX_D0=3;                   /* chỉ số "hôm nay" trong mảng daily (past_days=3: 0,1,2 = 3 ngày qua) */
 
 function wxMm(x){ var v=Math.round(Number(x||0)*10)/10; var s=(v%1===0)? String(Math.round(v)) : String(v); return s.replace('.',','); }
+var WX_DOW_FULL=['Chủ Nhật','Thứ Hai','Thứ Ba','Thứ Tư','Thứ Năm','Thứ Sáu','Thứ Bảy'];
+var WX_DOW_SHORT=['CN','T2','T3','T4','T5','T6','T7'];
+function wxPad(n){ return String(n).padStart(2,'0'); }
+function wxDM(d){ return wxPad(d.getDate())+'/'+wxPad(d.getMonth()+1); }
+function wxDMY(d){ return wxDM(d)+'/'+d.getFullYear(); }
+function wxDateLineText(d){ return WX_DOW_FULL[d.getDay()]+' · '+wxDMY(d); }
+function wxParseHour(s){ s=String(s||''); return new Date(Number(s.substring(0,4)), Number(s.substring(5,7))-1, Number(s.substring(8,10)), Number(s.substring(11,13)), 0, 0); }
+function wxDayWord(dDate, now){
+  var t0=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  var dd=new Date(dDate.getFullYear(),dDate.getMonth(),dDate.getDate());
+  if(dd.getTime()===t0.getTime()) return 'hôm nay';
+  if(dd.getTime()===t0.getTime()+86400000) return 'mai';
+  return WX_DOW_SHORT[dDate.getDay()]+' · '+wxDM(dDate);
+}
 function wxCodeInfo(c){
   c=Number(c);
   if(c===0) return {e:'☀️',t:'nắng đẹp'};
@@ -2760,7 +2804,7 @@ function wxComputeAlerts(data, now){
     var H=data.hourly, D=data.daily, times=H.time||[];
     var hIdx=wxHourIndex(data);
     if(hIdx<0){
-      var base=new Date(now.getFullYear(),now.getMonth(),now.getDate()-1,0,0,0);
+      var base=new Date(now.getFullYear(),now.getMonth(),now.getDate()-WX_D0,0,0,0);
       hIdx=Math.max(0,Math.floor((now-base)/3600000));
     }
     /* LUẬT 1 — mưa sắp tới trong vài giờ: hoãn xịt */
@@ -2770,58 +2814,179 @@ function wxComputeAlerts(data, now){
       var pm=(H.precipitation&&H.precipitation[k]!=null)? Number(H.precipitation[k]) : 0;
       if(pp>=WX_RAIN_SOON_PROB||pm>=WX_RAIN_SOON_MM){ rainSoon=true; break; }
     }
-    if(rainSoon) out.push({rule:1,text:'⛈️ Sắp mưa trong vài giờ tới — hoãn xịt thuốc kẻo rửa trôi',short:'⛈️ Sắp mưa — hoãn xịt kẻo rửa trôi thuốc'});
+    if(rainSoon) out.push({rule:1,text:'⛈️ ĐỪNG xịt lúc này — sắp mưa trong vài giờ tới, thuốc bị rửa trôi',short:'⛈️ Sắp mưa — hoãn xịt kẻo rửa trôi thuốc'});
     /* LUẬT 2 — mưa lớn ngày mai (hoặc phần còn lại của hôm nay) */
     var remainToday=0, todayEnd=(WX_D0+1)*24;
     for(var m=hIdx;m<Math.min(times.length,todayEnd);m++){ remainToday+=Number(H.precipitation[m]||0); }
     var tomSum=Number(D.precipitation_sum[WX_D0+1]||0);
-    if(tomSum>=WX_HEAVY_RAIN_MM) out.push({rule:2,text:'🌧️ Mai mưa lớn (~'+wxMm(tomSum)+'mm) — đừng bón phân/rải vôi hôm nay, trôi mất; kiểm rãnh thoát nước'});
-    else if(remainToday>=WX_HEAVY_RAIN_MM) out.push({rule:2,text:'🌧️ Hôm nay mưa lớn (~'+wxMm(remainToday)+'mm) — đừng bón phân/rải vôi, trôi mất; kiểm rãnh thoát nước'});
+    if(tomSum>=WX_HEAVY_RAIN_MM) out.push({rule:2,text:'🌧️ ĐỪNG bón phân/rải vôi hôm nay — mai mưa lớn (~'+wxMm(tomSum)+'mm), trôi mất · NÊN kiểm rãnh thoát nước'});
+    else if(remainToday>=WX_HEAVY_RAIN_MM) out.push({rule:2,text:'🌧️ ĐỪNG bón phân/rải vôi — hôm nay mưa lớn (~'+wxMm(remainToday)+'mm), trôi mất · NÊN kiểm rãnh thoát nước'});
     /* LUẬT 3 — bón phân đón mưa: mai mưa nhỏ–vừa, hôm qua + hôm nay đang khô */
     var ySum=Number(D.precipitation_sum[WX_D0-1]||0);
     var todaySoFar=0;
     for(var q=WX_D0*24;q<=hIdx&&q<times.length;q++){ todaySoFar+=Number(H.precipitation[q]||0); }
     var tomProb=(D.precipitation_probability_max&&D.precipitation_probability_max[WX_D0+1]!=null)? Number(D.precipitation_probability_max[WX_D0+1]) : 0;
     if(tomSum>=WX_FERT_MIN_MM&&tomSum<=WX_FERT_MAX_MM&&tomProb>=WX_FERT_PROB&&ySum<=WX_DRY_MM&&todaySoFar<=WX_DRY_MM){
-      out.push({rule:3,text:'🌦️ Mai có mưa vừa (~'+wxMm(tomSum)+'mm) — bón phân gốc đón mưa được, phân tan đỡ tốn nước tưới'});
+      out.push({rule:3,text:'🌦️ NÊN bón phân gốc đón mưa — mai mưa vừa (~'+wxMm(tomSum)+'mm), phân tan đỡ tốn nước tưới'});
     }
     /* LUẬT 4 — mưa dầm: chuỗi ngày mưa dài nhất trong tuần tới */
     function longestStreak(pred){ var best=0, run=0; for(var w=WX_D0;w<D.precipitation_sum.length;w++){ if(pred(w)){ run++; if(run>best) best=run; } else run=0; } return best; }
     var wet=longestStreak(function(i){ return Number(D.precipitation_sum[i]||0)>=WX_WET_MM; });
-    if(wet>=WX_STREAK_DAYS) out.push({rule:4,text:'🌧️ Mưa dầm '+wet+' ngày tới — coi chừng úng rễ, để ý nấm bệnh sau mưa'});
+    if(wet>=WX_STREAK_DAYS) out.push({rule:4,text:'🌧️ COI CHỪNG úng rễ — mưa dầm '+wet+' ngày tới, để ý nấm bệnh sau mưa'});
     /* LUẬT 5 — nắng khô kéo dài: chuỗi ngày khô nóng dài nhất trong tuần tới */
     var dry=longestStreak(function(i){ return Number(D.precipitation_sum[i]||0)<=WX_DRY_MM&&Number(D.temperature_2m_max[i]||0)>=WX_DRY_HOT_C; });
-    if(dry>=WX_STREAK_DAYS) out.push({rule:5,text:'☀️ Nắng khô '+dry+' ngày tới — nhớ tưới giữ ẩm, coi chừng nhện đỏ'});
+    if(dry>=WX_STREAK_DAYS) out.push({rule:5,text:'☀️ NÊN tưới giữ ẩm — nắng khô '+dry+' ngày tới, coi chừng nhện đỏ'});
+    /* LUẬT 6 — gió lớn trong 12 giờ tới: hoãn xịt */
+    if(H.wind_speed_10m){
+      var maxW=0, maxWH=-1;
+      for(var g=hIdx;g<Math.min(times.length,hIdx+WX_WIND_HOURS);g++){
+        var wv=Number(H.wind_speed_10m[g]||0);
+        if(wv>maxW){ maxW=wv; maxWH=g; }
+      }
+      if(maxW>=WX_WIND_MAX_KMH&&maxWH>=0){
+        out.push({rule:6,text:'💨 ĐỪNG xịt — gió lớn ~'+Math.round(maxW)+' km/h lúc '+String(times[maxWH]).substring(11,13)+':00, thuốc bị tạt'});
+      }
+    }
   }catch(e){}
   out.sort(function(a,b){ return a.rule-b.rule; });
   return out;
 }
+function wxSoilInfo(data){
+  try{
+    var D=data.daily, sum=0;
+    for(var i=WX_D0-3;i<WX_D0;i++){ sum+=Number(D.precipitation_sum[i]||0); }
+    var label=(sum<WX_SOIL_DRY)? 'đất khô' : (sum<=WX_SOIL_MID? 'đất vừa ẩm' : (sum<=WX_SOIL_WET? 'đất ướt' : 'đất rất ướt'));
+    var text='💧 Đất đang: '+label+' (3 ngày qua mưa ~'+wxMm(sum)+'mm)';
+    if(label==='đất rất ướt') text+=' — coi chừng úng rễ';
+    return {sum:sum,label:label,text:text};
+  }catch(e){ return null; }
+}
+function wxDryWindow(data){
+  try{
+    var H=data.hourly, times=H.time||[];
+    var hIdx=wxHourIndex(data);
+    if(hIdx<0) return null;
+    var end=Math.min(times.length, hIdx+48);
+    var bestStart=-1, bestLen=0, runStart=-1, runLen=0;
+    for(var k=hIdx;k<end;k++){
+      var pm=Number(H.precipitation[k]||0);
+      var pp=(H.precipitation_probability&&H.precipitation_probability[k]!=null)? Number(H.precipitation_probability[k]) : 0;
+      if(pm<WX_DRY_WIN_MM&&pp<WX_DRY_WIN_PROB){
+        if(runLen===0) runStart=k;
+        runLen++;
+        if(runLen>bestLen){ bestLen=runLen; bestStart=runStart; }
+      } else { runLen=0; runStart=-1; }
+    }
+    if(bestStart<0||bestLen<WX_DRY_WINDOW_MIN_H) return null;
+    return {startIdx:bestStart,len:bestLen};
+  }catch(e){ return null; }
+}
+function wxDryWindowText(data, now){
+  var w=wxDryWindow(data);
+  if(!w) return '🕐 48 giờ tới không có khoảng khô dài — hoãn xịt';
+  var times=data.hourly.time;
+  var st=wxParseHour(times[w.startIdx]);
+  var en=new Date(st.getTime()+w.len*3600000);
+  var span=(st.getDate()===en.getDate()&&st.getMonth()===en.getMonth())
+    ? st.getHours()+':00–'+en.getHours()+':00 '+wxDayWord(st,now)
+    : st.getHours()+':00 '+wxDayWord(st,now)+' – '+en.getHours()+':00 '+wxDayWord(en,now);
+  return '🕐 Cửa sổ khô: '+span+' · ~'+w.len+' giờ khô — canh xịt được';
+}
+function wxTomorrowLines(data, now){
+  var lines=[];
+  try{
+    if(!data||!data.daily||!data.hourly) return lines;
+    var D=data.daily, H=data.hourly, tom=WX_D0+1;
+    var tomSum=Number(D.precipitation_sum[tom]||0);
+    var tomProb=(D.precipitation_probability_max&&D.precipitation_probability_max[tom]!=null)? Number(D.precipitation_probability_max[tom]) : 0;
+    var tomWind=(D.wind_speed_10m_max&&D.wind_speed_10m_max[tom]!=null)? Number(D.wind_speed_10m_max[tom]) : 0;
+    var dung=[], nen=[];
+    if(tomSum>=WX_HEAVY_RAIN_MM){
+      dung.push('⛔ ĐỪNG bón phân, ĐỪNG xịt — mai mưa lớn ~'+wxMm(tomSum)+'mm, trôi hết');
+      nen.push('✅ NÊN kiểm rãnh thoát nước từ hôm nay');
+    } else {
+      /* mưa trong 6 giờ đầu ngày mai -> đừng xịt sáng mai */
+      var base=tom*24, rainMorning=false;
+      for(var k=base;k<Math.min((H.time||[]).length,base+6);k++){
+        var pp=(H.precipitation_probability&&H.precipitation_probability[k]!=null)? Number(H.precipitation_probability[k]) : -1;
+        var pm=Number(H.precipitation[k]||0);
+        if(pp>=WX_RAIN_SOON_PROB||pm>=WX_RAIN_SOON_MM){ rainMorning=true; break; }
+      }
+      if(rainMorning) dung.push('⛔ ĐỪNG xịt sáng mai — mưa rửa trôi thuốc');
+    }
+    if(tomWind>=WX_WIND_MAX_KMH) dung.push('⛔ ĐỪNG xịt lúc gió lớn — mai gió tới ~'+Math.round(tomWind)+' km/h, thuốc bị tạt');
+    var hasR3=false;
+    wxComputeAlerts(data, now).forEach(function(a){ if(a.rule===3) hasR3=true; });
+    if(hasR3) nen.push('✅ NÊN bón phân gốc hôm nay đón mưa ~'+wxMm(tomSum)+'mm — phân tan, đỡ tưới');
+    if(tomSum<=WX_DRY_MM&&tomProb<=30){
+      var extra='';
+      var w=wxDryWindow(data);
+      if(w){
+        var st=wxParseHour(H.time[w.startIdx]);
+        var tomDate=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1);
+        if(st.getDate()===tomDate.getDate()&&st.getMonth()===tomDate.getMonth()&&st.getFullYear()===tomDate.getFullYear()){
+          extra=' · khô liền ~'+w.len+' giờ từ '+st.getHours()+':00';
+        }
+      }
+      nen.push('✅ Mai khô ráo — xịt, bón, tỉa đều thuận'+extra);
+    }
+    dung.forEach(function(t){ lines.push({kind:'dung',text:t}); });
+    nen.forEach(function(t){ lines.push({kind:'nen',text:t}); });
+    if(!lines.length){
+      lines.push({kind:'info',text:'Mai: '+wxDaySummary(D,tom)+' · '+Math.round(Number(D.temperature_2m_min[tom]))+'–'+Math.round(Number(D.temperature_2m_max[tom]))+'°C — không có việc gì phải tránh hẳn'});
+    }
+  }catch(e){}
+  return lines.slice(0,3);
+}
 /* WX-PURE-END */
 
-function wxRenderNow(data){
+function wxRenderDate(){
+  var el=document.getElementById('wxDateLine');
+  if(el) el.textContent=wxDateLineText(new Date());
+}
+function wxRenderTomorrow(data){
+  var box=document.getElementById('wxTomorrow'); if(!box) return;
+  try{
+    var now=new Date();
+    var tom=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1);
+    var t=document.getElementById('wxTomTitle');
+    if(t) t.textContent='📋 Ngày mai — '+WX_DOW_FULL[tom.getDay()]+' · '+wxDM(tom);
+    var lines=wxTomorrowLines(data, now);
+    if(!lines.length){ box.innerHTML='<p class="emptyNote">Chưa tính được gợi ý ngày mai.</p>'; return; }
+    var h='';
+    lines.forEach(function(l){
+      var cls=(l.kind==='dung')? 'wxAlert' : (l.kind==='nen'? 'wxOk' : 'wxInfo');
+      h+='<div class="'+cls+'">'+l.text+'</div>';
+    });
+    box.innerHTML=h;
+  }catch(e){}
+}
+function wxRenderNow(data, atMs){
   var el=document.getElementById('wxNow'); if(!el) return;
   try{
-    var cur=data.current||{}, D=data.daily;
+    var cur=data.current||{};
     var info=wxCodeInfo(cur.weather_code);
     var temp=(cur.temperature_2m!=null)? Math.round(Number(cur.temperature_2m)) : '—';
     var hum=(cur.relative_humidity_2m!=null)? Math.round(Number(cur.relative_humidity_2m)) : '—';
     var wind=(cur.wind_speed_10m!=null)? Math.round(Number(cur.wind_speed_10m)) : '—';
-    var rain=(cur.precipitation!=null)? wxMm(Number(cur.precipitation)) : '0';
-    el.innerHTML='<div style="font-size:26px;font-weight:900">'+info.e+' '+temp+'°C <span style="font-size:15px;font-weight:800">'+info.t+'</span></div>'
-      +'<div>💧 Ẩm '+hum+'% · 💨 Gió '+wind+' km/h · 🌧 Mưa giờ qua '+rain+'mm</div>'
-      +'<div style="margin-top:4px">Hôm nay: '+wxDaySummary(D,WX_D0)+' · Mai: '+wxDaySummary(D,WX_D0+1)+'</div>';
+    var when='';
+    if(atMs){ var dt=new Date(atMs); when=' · dự báo lúc '+wxPad(dt.getHours())+':'+wxPad(dt.getMinutes()); }
+    el.innerHTML='Bây giờ: '+info.e+' <b>'+temp+'°C</b> · '+info.t+' · Ẩm '+hum+'% · Gió '+wind+' km/h'
+      +'<div style="margin-top:3px;color:var(--muted)">📍 Hòa Bắc, Di Linh (~980m) · Open-Meteo'+when+' <button type="button" class="wxRefresh" onclick="wxRefresh()" aria-label="Làm mới dự báo">↻</button></div>';
   }catch(e){}
 }
 function wxRenderAlerts(data){
   var box=document.getElementById('wxAlerts'); if(!box) return;
   try{
     var alerts=wxComputeAlerts(data, new Date());
-    if(!alerts.length){ box.innerHTML='<div class="wxOk">✅ Không có cảnh báo nào — thời tiết đang thuận cho việc vườn.</div>'; }
+    var h='';
+    if(!alerts.length){ h='<div class="wxOk">✅ Không có cảnh báo nào — thời tiết đang thuận cho việc vườn.</div>'; }
     else{
-      var h='';
       alerts.forEach(function(a){ h+='<div class="wxAlert">'+a.text+'</div>'; });
-      box.innerHTML=h;
     }
+    var soil=wxSoilInfo(data);
+    if(soil) h+='<div class="wxInfo">'+soil.text+'</div>';
+    box.innerHTML=h;
     /* Ngoại lệ giữ lại: cảnh báo luật 1 ngay trong thẻ ghi cữ xịt */
     var sp=document.getElementById('wxSprayAlert');
     if(sp){
@@ -2837,67 +3002,119 @@ function wxRenderHours(data){
     var H=data.hourly, times=H.time||[];
     var hIdx=wxHourIndex(data);
     if(hIdx<0||!times.length){ el.textContent='Chưa có dữ liệu giờ.'; return; }
-    function periodName(h){ if(h>=5&&h<=10) return 'Sáng'; if(h>=11&&h<=13) return 'Trưa'; if(h>=14&&h<=17) return 'Chiều'; if(h>=18&&h<=21) return 'Tối'; return 'Đêm'; }
-    var todayStr=String(times[hIdx]).substring(0,10);
-    var chunks=[], cur=null;
-    for(var k=hIdx;k<Math.min(times.length,hIdx+24);k++){
-      var tstr=String(times[k]);
-      var hh=Number(tstr.substring(11,13));
-      var dayOff=(tstr.substring(0,10)===todayStr)? 0 : 1;
-      var eff=(hh<5)? dayOff-1 : dayOff; /* giờ 0–4h tính là "đêm" của hôm trước */
-      var key=periodName(hh)+'|'+eff;
-      if(!cur||cur.key!==key){ cur={key:key,label:periodName(hh)+(eff>=1?' mai':''),sum:0,maxProb:0}; chunks.push(cur); }
-      cur.sum+=Number(H.precipitation[k]||0);
-      var pp=(H.precipitation_probability&&H.precipitation_probability[k]!=null)? Number(H.precipitation_probability[k]) : 0;
-      if(pp>cur.maxProb) cur.maxProb=pp;
+    var start=Math.floor(hIdx/3)*3; /* cột đầu = khối 3 giờ chứa giờ hiện tại */
+    var blocks=[];
+    for(var b=0;b<8;b++){
+      var s=start+b*3, sum=0, maxProb=0, bestCode=null, bestMm=-1, midCode=null;
+      for(var k=s;k<s+3&&k<times.length;k++){
+        var pm=Number(H.precipitation[k]||0); sum+=pm;
+        var pp=(H.precipitation_probability&&H.precipitation_probability[k]!=null)? Number(H.precipitation_probability[k]) : 0;
+        if(pp>maxProb) maxProb=pp;
+        if(pm>bestMm){ bestMm=pm; bestCode=(H.weather_code? H.weather_code[k] : null); }
+        if(k===s+1) midCode=(H.weather_code? H.weather_code[k] : null);
+      }
+      var code=(bestMm>0&&bestCode!=null)? bestCode : midCode;
+      var hh=(s<times.length)? Number(String(times[s]).substring(11,13)) : 0;
+      var icon;
+      if(code===95||code===96||code===99) icon='⛈️';
+      else if(bestMm>0.05||(code>=51&&code<=67)||(code>=80&&code<=82)||code===85||code===86) icon='🌧️';
+      else if(code===71||code===73||code===75||code===77) icon='🌨️';
+      else if(code===3||code===45||code===48) icon='☁️';
+      else icon=(hh>=18||hh<5)? '🌙' : '☀️';
+      blocks.push({hour:hh,sum:sum,maxProb:maxProb,icon:icon});
     }
-    var lines=chunks.filter(function(c){ return c.sum>=0.5||c.maxProb>=50; }).map(function(c){
-      return '<div class="wx7row"><span style="font-weight:800">'+c.label+'</span><span>💧 ~'+wxMm(c.sum)+'mm</span><span>mưa '+Math.round(c.maxProb)+'%</span></div>';
+    var maxSum=0;
+    blocks.forEach(function(x){ if(x.sum>maxSum) maxSum=x.sum; });
+    var h='<div class="wxChart">';
+    blocks.forEach(function(x){
+      var hpx=(maxSum>0)? Math.max(4, Math.round(4+(x.sum/maxSum)*44)) : 4;
+      var isMax=(maxSum>0&&x.sum===maxSum);
+      h+='<div class="wxCol">'
+        +'<div class="wxTopLab">'+(isMax? wxMm(x.sum)+'mm' : '')+'</div>'
+        +'<div class="wxColIcon">'+x.icon+'</div>'
+        +'<div class="wxBarWrap"><div class="wxBar" style="height:'+hpx+'px"></div></div>'
+        +'<div class="wxHourLab">'+x.hour+':00</div>'
+        +'<div class="wxProbLab">'+Math.round(x.maxProb)+'%</div>'
+        +'</div>';
     });
-    el.innerHTML=lines.length? lines.join('') : '<p class="emptyNote" style="margin:0">24 giờ tới ít khả năng mưa đáng kể.</p>';
+    h+='</div>';
+    var dw=wxDryWindow(data);
+    h+='<div class="'+(dw? 'wxOk' : 'wxInfo')+'" style="margin:10px 0 0">'+wxDryWindowText(data, new Date())+'</div>';
+    el.innerHTML=h;
   }catch(e){ el.textContent='Chưa tải được dữ liệu giờ.'; }
 }
 function wxRender7(data){
   var box=document.getElementById('wx7'); if(!box) return;
   try{
-    var D=data.daily, names=['CN','T2','T3','T4','T5','T6','T7'], rows='';
+    var D=data.daily, rows='';
+    var maxMm=0, minMm=Infinity, wMin=Infinity, wMax=-Infinity, idxs=[];
     for(var i=WX_D0;i<WX_D0+7&&i<D.time.length;i++){
+      idxs.push(i);
+      var mm0=Number(D.precipitation_sum[i]||0);
+      if(mm0>maxMm) maxMm=mm0;
+      if(mm0<minMm) minMm=mm0;
+      var lo0=Number(D.temperature_2m_min[i]), hi0=Number(D.temperature_2m_max[i]);
+      if(lo0<wMin) wMin=lo0;
+      if(hi0>wMax) wMax=hi0;
+    }
+    var range=(wMax-wMin)||1;
+    idxs.forEach(function(i){
       var d=new Date(D.time[i]+'T00:00:00');
       var ii=wxCodeInfo(D.weather_code[i]);
+      var mm=Number(D.precipitation_sum[i]||0);
       var pr=(D.precipitation_probability_max&&D.precipitation_probability_max[i]!=null)? Math.round(Number(D.precipitation_probability_max[i]))+'%' : '—';
-      rows+='<div class="wx7row"><span style="font-weight:800;min-width:66px">'+(i===WX_D0?'Hôm nay':names[d.getDay()])+' '+String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'</span><span>'+ii.e+' '+ii.t+'</span><span>'+Math.round(Number(D.temperature_2m_min[i]))+'–'+Math.round(Number(D.temperature_2m_max[i]))+'°C</span><span>💧 '+wxMm(Number(D.precipitation_sum[i]||0))+'mm · '+pr+'</span></div>';
-    }
+      var loN=Number(D.temperature_2m_min[i]), hiN=Number(D.temperature_2m_max[i]);
+      var left=Math.max(0, Math.min(100, Math.round((loN-wMin)/range*100)));
+      var width=Math.max(10, Math.min(100-left, Math.round((hiN-loN)/range*100)));
+      var rainW=(maxMm>0)? Math.round(mm/maxMm*100) : 0;
+      var chip='';
+      if(mm===maxMm&&maxMm>0) chip+=' <span class="wxChip">mưa to nhất</span>';
+      if(mm===minMm&&minMm<=WX_DRY_MM) chip+=' <span class="wxChip">khô nhất</span>';
+      var lab=((i===WX_D0)? 'Hôm nay · ' : '')+WX_DOW_SHORT[d.getDay()]+' · '+wxDM(d);
+      rows+='<div class="wx7row">'
+        +'<span style="font-weight:800;min-width:102px">'+lab+'</span>'
+        +'<span style="min-width:88px">'+ii.e+' '+ii.t+chip+'</span>'
+        +'<span class="wxTempWrap"><span class="wxTempLab">'+Math.round(loN)+'°</span><span class="wxTempTrack"><span class="wxTempSeg" style="left:'+left+'%;width:'+width+'%"></span></span><span class="wxTempLab">'+Math.round(hiN)+'°</span></span>'
+        +'<span class="wxRainWrap"><span class="wxRainTrack"><span class="wxRainBar" style="width:'+rainW+'%"></span></span><span>💧 '+wxMm(mm)+'mm · '+pr+'</span></span>'
+        +'</div>';
+    });
     box.innerHTML=rows;
   }catch(e){}
 }
 function wxRenderAll(data, atMs){
   try{
-    wxRenderNow(data); wxRenderAlerts(data); wxRenderHours(data); wxRender7(data);
-    var note=document.getElementById('wxNote');
-    if(note){
-      var when='';
-      if(atMs){ var dt=new Date(atMs); when=' · dự báo lúc '+String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0'); }
-      note.textContent='📍 Hòa Bắc, Di Linh (~980m) · Open-Meteo'+when;
-    }
+    wxRenderDate();
+    wxRenderTomorrow(data);
+    wxRenderAlerts(data);
+    wxRenderHours(data);
+    wxRender7(data);
+    wxRenderNow(data, atMs);
   }catch(e){}
 }
 function wxFail(){
   try{
     var el=document.getElementById('wxNow');
-    if(el) el.textContent='🌦 Chưa tải được dự báo — kiểm tra mạng rồi mở lại app';
+    if(el) el.textContent='🌦 Chưa tải được dự báo — kiểm tra mạng rồi bấm ↻ thử lại';
     var al=document.getElementById('wxAlerts');
     if(al) al.innerHTML='<p class="emptyNote">Chưa có dữ liệu để tính cảnh báo.</p>';
+    var tm=document.getElementById('wxTomorrow');
+    if(tm) tm.innerHTML='<p class="emptyNote">Chưa có dữ liệu dự báo ngày mai.</p>';
   }catch(e){}
 }
-function wxLoad(){
-  var cached=null;
-  try{ var raw=localStorage.getItem(WX_CACHE_KEY); if(raw) cached=JSON.parse(raw); }catch(e){}
-  if(cached&&cached.data){ try{ wxRenderAll(cached.data, Number(cached.at||0)||null); }catch(e){} }
-  if(typeof fetch!=='function'){ if(!cached) wxFail(); return; }
+function wxFetchNow(onFail){
+  if(typeof fetch!=='function'){ if(onFail) onFail(); return; }
   fetch(WX_URL).then(function(r){ return r.json(); }).then(function(data){
     try{ localStorage.setItem(WX_CACHE_KEY, JSON.stringify({at:Date.now(), data:data})); }catch(e){}
     wxRenderAll(data, Date.now());
-  }).catch(function(){ if(!cached) wxFail(); });
+  }).catch(function(){ if(onFail) onFail(); });
+}
+function wxRefresh(){ wxFetchNow(null); }
+function wxLoad(){
+  var cached=null;
+  try{ var raw=localStorage.getItem(WX_CACHE_KEY); if(raw) cached=JSON.parse(raw); }catch(e){}
+  try{ wxRenderDate(); }catch(e){}
+  if(cached&&cached.data){ try{ wxRenderAll(cached.data, Number(cached.at||0)||null); }catch(e){} }
+  wxFetchNow(cached? null : function(){ wxFail(); });
 }
 try{ wxLoad(); }catch(e){}
 </script>
