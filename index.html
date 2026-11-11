@@ -501,6 +501,14 @@ label{font-size:13.5px;font-weight:800;display:block;margin:12px 0 8px}
     <div class="detailBox" id="d-garden"><p>Lộ trình 6 chặng: Phục hồi → Tạo mầm → Làm bông → Xổ nhụy &amp; thụ phấn → Nuôi trái → Thu hoạch vụ muộn. Vùng cao chậm hơn vùng thấp 20–30 ngày.</p></div>
   </div>
   <p class="sub">Số dưới đây là giá trị mẫu, chưa chốt — sửa là app lưu lại trên máy này.</p>
+  <p class="sub" id="syncStatusLine" style="margin:0 0 8px">☁️ Đồng bộ: Đang nối…</p>
+  <details style="margin:0 0 10px">
+    <summary style="font-size:13px;color:var(--muted);cursor:pointer">Đổi mã vườn (chỉ khi cần tách sổ khác)</summary>
+    <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+      <input id="syncCodeInput" type="text" style="flex:1" aria-label="Mã vườn">
+      <button class="btn btn-outline" type="button" onclick="changeGardenCode()">Đổi mã</button>
+    </div>
+  </details>
   <div class="paramGrid" id="paramGrid"></div>
   <div class="blockTitle"><h2>📖 Từ điển vườn</h2></div>
   <p class="sub" style="margin:0 0 8px">103 mục chia 11 nhóm — bấm vào từng mục để mở. Mỗi mục có nghĩa tiếng thường, cách áp ở vườn mình và một lưu ý riêng.</p>
@@ -1192,7 +1200,7 @@ function loadState(){
 var state=loadState();
 var REDUCED_MOTION=false; try{ REDUCED_MOTION=window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){}
 function scrollBehavior(){ return REDUCED_MOTION?'auto':'smooth'; }
-function saveState(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} }
+function saveState(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} try{ cloudSchedulePush(); }catch(e){} }
 function fmt(n){return n.toLocaleString('vi-VN')+" đ"}
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function isoToday(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
@@ -2509,7 +2517,99 @@ function renderDayPanel(){
   el.innerHTML=h;
 }
 (function(){ var cdEl=document.getElementById('cDate'); if(cdEl&&!cdEl.value) cdEl.value=isoToday(); })();
-renderPrune(); renderPrune2(); renderMilestones(); renderUrgent(); renderAllTasks(); renderCosts(); renderWeak(); renderParams(); renderJournalToday(); renderMonthSummary(); renderScratch(); renderSpray(); renderCalendar(); renderDict(); initTermSlots(); renderCostSuggestions();
+function renderAllViews(){
+  renderPrune(); renderPrune2(); renderMilestones(); renderUrgent(); renderAllTasks(); renderCosts(); renderWeak(); renderParams(); renderJournalToday(); renderMonthSummary(); renderScratch(); renderSpray(); renderCalendar(); renderDict(); initTermSlots(); renderCostSuggestions();
+}
+renderAllViews();
+</script>
+<script>
+/* ============ ĐỒNG BỘ ĐÁM MÂY (Firebase Firestore) ============ */
+var SYNC_GARDEN_CODE_DEFAULT='vuon-ong-am-1126';
+var SYNC_KEY_VALUE='khoa-vuon-7f3a';
+var SYNC_CFG={apiKey:"AIzaSyCx6yGq6Q872QZ-cOSSYv9H3gxFI5huVFM",authDomain:"sau-rieng-ong-am.firebaseapp.com",projectId:"sau-rieng-ong-am",storageBucket:"sau-rieng-ong-am.firebasestorage.app",messagingSenderId:"39245072921",appId:"1:39245072921:web:736fd33b91a0c7250d7888"};
+var syncDeviceId=''; try{ syncDeviceId=localStorage.getItem('brownDurianDeviceId')||''; if(!syncDeviceId){ syncDeviceId='dev-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,9); localStorage.setItem('brownDurianDeviceId',syncDeviceId); } }catch(e){ syncDeviceId='dev-anon'; }
+var syncGardenCode=SYNC_GARDEN_CODE_DEFAULT; try{ syncGardenCode=localStorage.getItem('brownDurianGardenCode')||SYNC_GARDEN_CODE_DEFAULT; }catch(e){}
+var syncDocSyncKey=null;
+var syncPushTimer=null;
+var syncApplying=false;
+var syncFirestore=null;
+var syncFns=null;
+function syncLocalSyncedAt(){ try{ return Number(localStorage.getItem('brownDurianSyncedAt'))||0; }catch(e){ return 0; } }
+function syncSetSyncedAt(v){ try{ localStorage.setItem('brownDurianSyncedAt', String(v)); }catch(e){} }
+function syncSetStatus(txt){ var el=document.getElementById('syncStatusLine'); if(el) el.textContent='☁️ Đồng bộ: '+txt; var inp=document.getElementById('syncCodeInput'); if(inp&&document.activeElement!==inp) inp.value=syncGardenCode; }
+function changeGardenCode(){
+  var inp=document.getElementById('syncCodeInput'); if(!inp) return;
+  var v=(inp.value||'').trim(); if(!v||v===syncGardenCode) return;
+  syncGardenCode=v; try{ localStorage.setItem('brownDurianGardenCode', v); localStorage.setItem('brownDurianSyncedAt','0'); }catch(e){}
+  syncDocSyncKey=null; syncSetStatus('Đang nối…'); cloudInit();
+}
+function syncSerialize(){ try{ return JSON.parse(JSON.stringify(state)); }catch(e){ return state; } }
+function cloudSchedulePush(){
+  if(syncApplying||!syncFirestore) return;
+  syncSetStatus('Đang lưu…');
+  if(syncPushTimer) clearTimeout(syncPushTimer);
+  syncPushTimer=setTimeout(cloudPushNow, 1500);
+}
+function cloudPushNow(){
+  if(!syncFirestore||!syncFns) return;
+  var payload={ state: syncSerialize(), updatedAt: Date.now(), updatedBy: syncDeviceId, syncKey: syncDocSyncKey||SYNC_KEY_VALUE };
+  syncFns.setDoc(syncFns.docRef, payload).then(function(){
+    syncDocSyncKey=payload.syncKey; syncSetSyncedAt(payload.updatedAt);
+    syncSetStatus(navigator.onLine===false ? 'Mất mạng — đang lưu trên máy' : 'Đã nối · vừa xong');
+  }).catch(function(){ syncSetStatus('Mất mạng — đang lưu trên máy'); });
+}
+function cloudApplyRemote(data){
+  if(!data||typeof data.state!=='object'||!data.state) return;
+  syncApplying=true;
+  try{
+    state=data.state;
+    try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){}
+    syncSetSyncedAt(Number(data.updatedAt)||Date.now());
+    if(data.syncKey) syncDocSyncKey=data.syncKey;
+    renderAllViews();
+  }catch(e){}
+  syncApplying=false;
+}
+function cloudInit(){
+  if(!syncFirestore||!syncFns) return;
+  try{
+    if(syncFns.unsub){ try{ syncFns.unsub(); }catch(e){} }
+    syncFns.docRef=syncFns.doc(syncFirestore, 'gardens', syncGardenCode);
+    syncFns.getDoc(syncFns.docRef).then(function(snap){
+      if(snap.exists()){
+        var d=snap.data();
+        if(d.syncKey) syncDocSyncKey=d.syncKey;
+        if(d.state&&(Number(d.updatedAt)||0)>syncLocalSyncedAt()){ cloudApplyRemote(d); }
+      } else {
+        cloudPushNow();
+      }
+    }).catch(function(){ syncSetStatus('Mất mạng — đang lưu trên máy'); });
+    syncFns.unsub=syncFns.onSnapshot(syncFns.docRef, function(snap){
+      if(!snap.exists()) return;
+      var d=snap.data();
+      if(d.syncKey) syncDocSyncKey=d.syncKey;
+      if(d.updatedBy&&d.updatedBy!==syncDeviceId&&(Number(d.updatedAt)||0)>syncLocalSyncedAt()){
+        cloudApplyRemote(d); syncSetStatus('Đã nối · vừa xong');
+      }
+    }, function(){ syncSetStatus('Mất mạng — đang lưu trên máy'); });
+    syncSetStatus(navigator.onLine===false ? 'Mất mạng — đang lưu trên máy' : 'Đã nối · vừa xong');
+  }catch(e){ syncSetStatus('Mất mạng — đang lưu trên máy'); }
+}
+window.addEventListener('online', function(){ if(syncFirestore){ syncSetStatus('Đang lưu…'); cloudPushNow(); } });
+window.addEventListener('offline', function(){ syncSetStatus('Mất mạng — đang lưu trên máy'); });
+syncSetStatus('Đang nối…');
+</script>
+<script type="module">
+try{
+  const fbApp = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
+  const fbFs = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+  const fb = fbApp.initializeApp(SYNC_CFG);
+  syncFirestore = fbFs.getFirestore(fb);
+  syncFns = { doc: fbFs.doc, getDoc: fbFs.getDoc, setDoc: fbFs.setDoc, onSnapshot: fbFs.onSnapshot, docRef: null, unsub: null };
+  cloudInit();
+}catch(e){
+  try{ syncSetStatus('Mất mạng — đang lưu trên máy'); }catch(e2){}
+}
 </script>
 </body>
 </html>
